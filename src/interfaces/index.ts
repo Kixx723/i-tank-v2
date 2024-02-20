@@ -24,3 +24,22 @@ export interface Node {
     junction: Junction | null;
     onUpdate: (junctionId: number, updatedData: Partial<Junction>) => void;
   }
+
+  export interface Tank {
+    id: number;
+    nodeId?: number;
+    elevation?: number;
+    initialLevel?: number;
+    minimumLevel?: number;
+    maximumLevel?: number;
+    diameter?: number;
+    minimumVolume?: number;
+    volumeCurve?: string;
+  }
+
+  export interface ModalTankProps {
+    isOpen: boolean;
+    onClose: () => void;
+    tank: Tank | null;
+    onUpdate: (tankId: number, updatedData: Partial<Junction>) => void;
+  }

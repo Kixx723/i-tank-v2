@@ -12,11 +12,12 @@ import { Vector as VectorLayer } from 'ol/layer';
 import { defaults as defaultControls } from 'ol/control';
 import { BingMaps, Vector as VectorSource } from 'ol/source';
 import { Circle as CircleStyle, Fill, Style } from 'ol/style';
-import { EpanetNode, Node, Junction } from '@/interfaces';
-import JunctionModal from './JunctionModal';
+import { Node, Junction } from '@/interfaces';
 import axios from 'axios';
 import 'ol/ol.css';
 import FloatingTool from './FloatingTool';
+import JunctionModal from './JunctionModal';
+import TankModal from './TankModal';
 
 const ProjectMap: React.FC = () => {
   const mapRef = useRef<HTMLDivElement>(null);
@@ -24,6 +25,51 @@ const ProjectMap: React.FC = () => {
   const [selectedNodeType, setSelectedNodeType] = useState<string>('');
   const vectorSource = useRef(new VectorSource()).current; 
   const [nodes, setNodes] = useState<Node[]>([]);
+  const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
+  const [currentJunction, setCurrentJunction] = useState<Junction | null>(null);
+  const [currentTank, setCurrentTank] = useState<Junction | null>(null);
+
+  const clickingNode = async (nodeId: number) => {
+    try {
+      const response = await axios.get(`http://localhost:3001/nodes/${nodeId}`);
+      const junction = response.data.junction;
+      const tank = response.data.tank;
+      console.log(tank)
+      setCurrentJunction(junction);
+      setCurrentTank(tank);
+      setIsModalOpen(true);
+   } catch (error) {
+      console.log('Error fetching nodes:', error);
+   }
+  }
+
+  const updateJunction = async (junctionId: number, updatedData: Partial<Junction>) => {
+    try {
+      await axios.patch(`http://localhost:3001/junctions/${junctionId}`, updatedData, {
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      });
+      setIsModalOpen(false); 
+      console.log(updatedData);
+    } catch (error) {
+      console.error('Error updating junction:', error);
+    }
+  };
+
+  const updateTank = async (tankId: number, updatedData: Partial<Junction>) => {
+    try {
+      await axios.patch(`http://localhost:3001/tanks/${tankId}`, updatedData, {
+        headers: {
+          'Content-Type': 'application/json'
+        },
+      });
+      setIsModalOpen(false); 
+      console.log(updatedData);
+    } catch (error) {
+      console.error('Error updating junction:', error);
+    }
+  };
 
   const getColorForNodeType = (nodeType: string): string => {
     switch (nodeType) {
@@ -127,16 +173,23 @@ const ProjectMap: React.FC = () => {
   useEffect(() => {
     if (!map) return;
 
-    const handleSingleClick = async (e: MapBrowserEvent<PointerEvent>) => {
-      if (!selectedNodeType) return;
+    const mapElement = map.getTargetElement();
+      if (selectedNodeType) {
+        mapElement.style.cursor = 'crosshair'; 
+      } else {
+        mapElement.style.cursor = ''; 
+      }
 
+    const handleSingleClick = async (e: MapBrowserEvent<PointerEvent>) => {
+      if (!selectedNodeType) return
+      
       const coordinate = e.coordinate;
       const [longitude, latitude] = toLonLat(coordinate);
       const pointFeature = new Feature(new Point(coordinate));
       pointFeature.setStyle(
         new Style({
           image: new CircleStyle({
-            radius: 10,
+            radius: 8,
             fill: new Fill({ color: getColorForNodeType(selectedNodeType) }),
           }),
         })
@@ -145,12 +198,31 @@ const ProjectMap: React.FC = () => {
       await addNodeToDB(longitude, latitude, selectedNodeType);
     };
 
+    const handleClick = async (e: MapBrowserEvent<PointerEvent>) => {
+      const feature = map.forEachFeatureAtPixel(e.pixel, (feature) => feature);
+      if (feature && feature.get('id')) {
+        await clickingNode(feature.get('id'));
+      }
+    };
+
+    const handlePointerMove = (e: MapBrowserEvent<PointerEvent>) => {
+      const pixel = map.getEventPixel(e.originalEvent);
+      const hit = map.hasFeatureAtPixel(pixel);
+      map.getTargetElement().style.cursor = hit ? 'pointer' : '';
+    };
+  
+    map.on('pointermove', handlePointerMove);
     map.on('singleclick', handleSingleClick);
+    map.on('singleclick', handleClick)
 
     return () => {
+      if (map) {
+        map.un('pointermove', handlePointerMove);
+      }
       map.un('singleclick', handleSingleClick);
+      map.un('singleclick', handleClick)
     };
-  }, [map, selectedNodeType]);
+  }, [map, selectedNodeType, clickingNode]);
 
   // rendering the nodes
   useEffect(() => {
@@ -159,6 +231,7 @@ const ProjectMap: React.FC = () => {
       nodes.forEach((node) => {
         const pointFeature = new Feature({
           geometry: new Point(fromLonLat([node.longitude, node.latitude])),
+          id: node.id
         });
 
         pointFeature.setStyle(
@@ -177,6 +250,18 @@ const ProjectMap: React.FC = () => {
 
   return (
     <>
+      <JunctionModal
+        isOpen={isModalOpen}
+        onClose={() => setIsModalOpen(false)}
+        junction={currentJunction}
+        onUpdate={updateJunction}
+      /> 
+      <TankModal 
+      isOpen={isModalOpen}
+      onClose={() => setIsModalOpen(false)}
+      tank={currentTank}
+      onUpdate={updateTank}
+      />
       <FloatingTool onSelectNodeType={setSelectedNodeType}/>
       <div ref={mapRef} style={{ width: '100vw', height: '100vh' }}></div>
     </>
